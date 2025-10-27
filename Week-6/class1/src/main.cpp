@@ -1,6 +1,6 @@
 //Title: DHT11 Sensor Data Display on OLED
-//ZAIN RAZA ZAIDI
-//23-NTU-CS-B-1096
+//Talha
+//23-NTU-CS-B-1075
 
 
 #include <Arduino.h>
