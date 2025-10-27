@@ -1,8 +1,12 @@
-// Assignment-01_Task-A
-// 3 Led and 2 Buttons with Different Cases
-// Embedded IoT System Fall-2025
+// ================================
+// Assignment-01_Task-A (Simplified)
+// 3 LEDs and 2 Buttons with OLED Display
+// Same functionality, simpler logic
+// ================================
 
-// Name: M Talha iftikhar                 Reg#: 23-NTU-CS-1075
+// Name: M Talha Iftikhar
+// Reg#: 23-NTU-CS-1075
+
 #include <Arduino.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
@@ -12,88 +16,48 @@
 #define SCREEN_HEIGHT 64
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
+// ======== Pin Definitions ========
 #define LED1 19
 #define LED2 18
 #define LED3 5
-
 #define BTN_MODE 34
 #define BTN_RESET 35
 
-// ----- Mode Variables -----
-volatile int mode = 0;
-volatile int alt_Mode = 1;
-volatile bool modeChanged = false;
-volatile bool resetPressed = false;
-
-// ----- Debounce Control -----
-hw_timer_t *debounceTimer = NULL;
-volatile bool debounceActive = false;  // shared debounce flag
-volatile int lastButton = 0;           // 1 = mode, 2 = reset
-
-// ----- PWM Setup -----
-#define PWM_CH 0
-#define FREQ 5000
-#define RES 8
-
+// ======== Variables ========
+int mode = 0;
 int brightness = 0;
 int fadeAmount = 15;
-unsigned long previousMillis = 0;
-unsigned long lastFade = 0;
 bool ledState = LOW;
 
-// ======== ISR SECTION ========
+// For blinking
+unsigned long prevMillisBlink = 0;
+unsigned long prevMillisFade = 0;
 
-// Reset debounce after 200ms
-void IRAM_ATTR resetDebounce() {
-  debounceActive = false;
-  timerAlarmDisable(debounceTimer);
-  timerWrite(debounceTimer, 0);
-}
+// For debounce
+unsigned long lastModePress = 0;
+unsigned long lastResetPress = 0;
+const unsigned long debounceDelay = 200;
 
-// When MODE button pressed
-void IRAM_ATTR BTN_Pressed_Mode() {
-  if (debounceActive) return;
-  debounceActive = true;
-  lastButton = 1;
-  timerWrite(debounceTimer, 0);
-  timerAlarmWrite(debounceTimer, 200000, false);
-  timerAlarmEnable(debounceTimer);
-  modeChanged = true;
-}
-
-// When RESET button pressed
-void IRAM_ATTR BTN_Pressed_Reset() {
-  if (debounceActive) return;
-  debounceActive = true;
-  lastButton = 2;
-  timerWrite(debounceTimer, 0);
-  timerAlarmWrite(debounceTimer, 200000, false);
-  timerAlarmEnable(debounceTimer);
-  resetPressed = true;
-}
-
-// ======== DISPLAY FUNCTION ========
+// ======== OLED Display Function ========
 void showMode(const char* text) {
   display.clearDisplay();
   display.setTextSize(2);
   display.setTextColor(SSD1306_WHITE);
-  display.setCursor((SCREEN_WIDTH - strlen(text) * 12) / 2, (SCREEN_HEIGHT - 16) / 2);
+  int x = (SCREEN_WIDTH - strlen(text) * 12) / 2;
+  int y = (SCREEN_HEIGHT - 16) / 2;
+  display.setCursor(x, y);
   display.print(text);
   display.display();
 }
 
-// ======== SETUP ========
+// ======== Setup ========
 void setup() {
+  // Initialize OLED
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
-    for (;;);
+    for (;;); // hang if display not found
   }
 
-  display.clearDisplay();
-  display.setTextColor(SSD1306_WHITE);
-  display.setTextSize(2);
-  display.setCursor(10, 25);
-  display.println("Mode 0: OFF");
-  display.display();
+  showMode("Mode 0: OFF");
 
   pinMode(LED1, OUTPUT);
   pinMode(LED2, OUTPUT);
@@ -101,82 +65,74 @@ void setup() {
   pinMode(BTN_MODE, INPUT_PULLUP);
   pinMode(BTN_RESET, INPUT_PULLUP);
 
-  digitalWrite(LED1, LOW);
-  digitalWrite(LED2, LOW);
-  digitalWrite(LED3, LOW);
-
-  // Attach button interrupts
-  attachInterrupt(digitalPinToInterrupt(BTN_MODE), BTN_Pressed_Mode, FALLING);
-  attachInterrupt(digitalPinToInterrupt(BTN_RESET), BTN_Pressed_Reset, FALLING);
-
-  // Setup single hardware timer for debounce
-  debounceTimer = timerBegin(0, 80, true);              // 1 tick = 1µs
-  timerAttachInterrupt(debounceTimer, &resetDebounce, true);
-  timerAlarmWrite(debounceTimer, 200000, false);        // 200ms debounce
-  timerAlarmDisable(debounceTimer);
-
-  ledcSetup(PWM_CH, FREQ, RES);
-  ledcAttachPin(LED3, PWM_CH);
+  // Setup PWM for LED3
+  ledcSetup(0, 5000, 8);  // channel 0, freq 5kHz, 8-bit
+  ledcAttachPin(LED3, 0);
 }
 
 // ======== LOOP ========
 void loop() {
-  // Reset button action
-  if (resetPressed) {
+  unsigned long currentMillis = millis();
+
+  // ---------- Button: MODE ----------
+  if (digitalRead(BTN_MODE) == LOW && (currentMillis - lastModePress > debounceDelay)) {
+    lastModePress = currentMillis;
+    mode++;
+    if (mode > 4) mode = 0;
+    delay(50); // small delay for stable press
+  }
+
+  // ---------- Button: RESET ----------
+  if (digitalRead(BTN_RESET) == LOW && (currentMillis - lastResetPress > debounceDelay)) {
+    lastResetPress = currentMillis;
     mode = 0;
     digitalWrite(LED1, LOW);
     digitalWrite(LED2, LOW);
-    resetPressed = false;
+    ledcWrite(0, 0);
     showMode("Default");
+    delay(200); // give visual feedback delay
   }
 
-  // Mode button action
-  if (modeChanged) {
-    mode++;
-    if (mode > 4) mode = 0;
-    modeChanged = false;
-  }
-
-  // ----- LED Modes -----
+  // ---------- LED Modes ----------
   switch (mode) {
-    case 0:
+    case 0:  // Default OFF
       showMode("Default");
       digitalWrite(LED1, LOW);
       digitalWrite(LED2, LOW);
-      ledcWrite(PWM_CH, 0);
+      ledcWrite(0, 0);
       break;
 
-    case 1:
+    case 1:  // Both OFF
       showMode("Both OFF");
       digitalWrite(LED1, LOW);
       digitalWrite(LED2, LOW);
-      ledcWrite(PWM_CH, 0);
+      ledcWrite(0, 0);
       break;
 
-    case 2:
+    case 2:  // Blinking
       showMode("Blinking");
-      if (millis() - previousMillis >= 500) {
-        previousMillis = millis();
+      if (currentMillis - prevMillisBlink >= 500) {
+        prevMillisBlink = currentMillis;
         ledState = !ledState;
         digitalWrite(LED1, ledState);
         digitalWrite(LED2, !ledState);
       }
       break;
 
-    case 3:
+    case 3:  // Both ON
       showMode("Both ON");
       digitalWrite(LED1, HIGH);
       digitalWrite(LED2, HIGH);
-      ledcWrite(PWM_CH, 0);
+      ledcWrite(0, 0);
       break;
 
-    case 4:
+    case 4:  // PWM Fade
       showMode("PWM");
       digitalWrite(LED1, LOW);
       digitalWrite(LED2, LOW);
-      if (millis() - lastFade >= 2) {
-        lastFade = millis();
-        ledcWrite(PWM_CH, brightness);
+      if (currentMillis - prevMillisFade >= 2) {
+        prevMillisFade = currentMillis;
+        ledcWrite(0, brightness);
         brightness += fadeAmount;
         if (brightness <= 0 || brightness >= 255)
           fadeAmount = -fadeAmount;
