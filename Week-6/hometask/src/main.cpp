@@ -1,6 +1,6 @@
 //TITLE: DHT11 and LDR Sensor Data Display on OLED
-//ZAIN RAZA ZAIDI
-//23-NTU-CS-B-1096
+//Talha Iftikhar
+//23-NTU-CS-B-1075
 
 #include <Arduino.h>
 #include <Wire.h>
